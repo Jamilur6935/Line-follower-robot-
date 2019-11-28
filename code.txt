@@ -1,0 +1,212 @@
+Arduino Code:
+
+#define left_base_speed 160
+#define right_base_speed 160
+#define STB 11
+#include <QTRSensors.h>
+QTRSensors qtr;
+const uint8_t SensorCount = 6;
+uint16_t sensorValues[SensorCount];
+int ir[6];
+int left_speed, right_speed, error, sum, previous_error, total_error;
+float kp = 4.1, kd =1.5; /* kp=1.55, kd=1.2 */
+int button;
+int stby=0;
+int sensorMax=0, sensorMin=1000;
+void setup() {
+  digitalWrite(2,HIGH); // Motor Driver STBY if you use TB6612FNG / FNG
+  Serial.begin(9600);
+  pin_setup();
+  qtr.setTypeRC();
+  qtr.setSensorPins((const uint8_t[]){A0,A1,A2,A3,A4,A5}, SensorCount);
+  digitalWrite(STB,1);
+ }
+void loop() {
+// motor(255,255);
+  sensor_read();
+  sensor_print();
+  LINE_TRACK();
+//  node_check();
+ }
+void pin_setup()
+{
+  pinMode(2, OUTPUT);
+  pinMode(3, OUTPUT);
+  pinMode(4, OUTPUT);
+  pinMode(5, OUTPUT);
+  pinMode(6, OUTPUT);
+  pinMode(7, OUTPUT);
+  pinMode(8, OUTPUT);
+  pinMode(9, OUTPUT);
+ }
+void motor(int left_speed, int right_speed) {
+  if (left_speed >= 0) {
+    digitalWrite(2, HIGH);
+    digitalWrite(4, LOW);
+    analogWrite(3, left_speed);
+  }
+  else {
+    digitalWrite(4, HIGH);
+    digitalWrite(2, LOW);
+    analogWrite(3,abs(left_speed));
+  }
+  if (right_speed >= 0) {
+    digitalWrite(7, HIGH);
+    digitalWrite(8, LOW);
+    analogWrite(5, right_speed);
+  }
+  else {
+    digitalWrite(8, HIGH);
+    digitalWrite(7,LOW);
+    analogWrite(5,abs(right_speed));
+  }
+}
+
+void sensor_read() {
+ // read raw sensor values
+  qtr.read(sensorValues);
+  for (uint8_t i = 0; i < SensorCount; i++)
+  {
+    ir[i] = sensorValues[i]>500;
+  }
+
+  // print the sensor values as numbers from 0 to 2500, where 0 means maximum
+  // reflectance and 2500 means minimum reflectance
+}
+
+void sensor_print() {
+  for (uint8_t i = 0; i < SensorCount; i++)
+  {
+//    ir[i] = sensorValues[8-i];
+    Serial.print(ir[i]);
+    Serial.print('\t');
+  }
+  Serial.println();
+//  delay(200);       // delay for 200ms to observe the sensor value easily
+                      // but turn off any delay while Line follower is tracking
+}
+void LINE_TRACK() {
+  error = (ir[0]*-25+ ir[1]*-10 + ir[2]*0 + ir[3]*0 + ir[4]*10+ir[5]*25 );
+  total_error = kp * error + kd * (error - previous_error);
+  left_speed = left_base_speed +total_error;
+  right_speed = right_base_speed - total_error;
+  previous_error = error;
+  if (left_speed > 255) {
+    left_speed = 255;
+  }
+  if (right_speed > 255)
+  {
+    right_speed = 255;
+  }
+  motor(left_speed, right_speed);
+  }
+void node_check()
+{
+   /////// This function has to be edited according to the nodes of the tracks.
+   // It's just a demo Node check function to easily understand how to use delay function..
+  if(ir[0]==1 && ir[1]==1&& ir[2]==1&& ir[3]==1)
+  {
+    motor(-50,-50); // Right_down_acute
+    motor(100,100);
+    delay(200);
+    sensor_read();
+    while(ir[3]==0&& ir[4]==0)
+    {
+      motor(90,-90);
+      sensor_read();
+    }
+    motor(120,80);
+    delay(400);
+   }
+  if(ir[7]==1 && ir[6]==1&& ir[5]==1&& ir[4]==1&& ir[3]==1)
+  {
+    motor(-50,-50); // Left_down_acute
+    motor(100,100);
+    delay(100);
+    sensor_read();
+    while(ir[4]==0)
+    {
+      motor(-90,90);
+      sensor_read();
+    }
+     motor(80,140);
+    delay(300);
+   }
+if(ir[2]==1&&ir[3]==1&&ir[4]==1&&ir[5]==1)
+{
+ while(ir[2]==1&& ir[5]==1)
+{
+  motor(100,100);
+  sensor_read();
+}
+motor(0,0);
+delay(50);
+if(ir[0]==1&& ir[7]==1)
+{
+  motor(70,70);
+  delay(100);
+  while(ir[3]==0&& ir[4]==0)
+  {
+    motor(100,-100);
+    sensor_read();
+  }
+}
+}
+}
+
+
+
+
+
+void calibrate()
+{
+  // This function is used for sensor calibration automatically.
+  // Here the sensors of the LFR reads all the value and Takes max and min threshold of the sensors
+  // The set a threshold value for sensor.. this function is not completed yet..
+  // Setting threshold from the calibration function is not done..
+  // You have to set threshold level on sensor_print function just after analogRead like::
+  // ir[i] = analogRead(i)< threshold
+  digitalWrite(13,HIGH);
+ 
+  while(millis()<500)
+  {
+    motor(90,-90);
+  for(int i=0; i<8; i++)
+  {
+  ir[i]=analogRead(i);
+  if(ir[i]>sensorMax)
+  sensorMax=ir[i];
+  }
+  }
+  while(millis()<1500)
+  {
+    motor(-90,90);
+  for(int i=0; i<8; i++)
+  {
+    ir[i]=analogRead(i);
+  if(ir[i]<sensorMin)
+  sensorMin=ir[i];
+  }
+ 
+  }
+  motor(90,-90);
+  delay(500);
+  motor(0,0);
+  Serial.println("Sensor Max");
+  Serial.println(sensorMax);
+   Serial.println("Sensor Min");
+  Serial.println(sensorMin);
+  digitalWrite(13,LOW);
+ }
+void STBY() /// This function is only for FNG Motor drivers where setting STBY pin HIGH of the driver
+             // set the motor driver in operation mode.
+{
+ button=digitalRead(10);
+ if(button)
+ {
+ stby=1;
+ digitalWrite(6,stby);
+ }
+ else digitalWrite(6,0);
+ 
+}
